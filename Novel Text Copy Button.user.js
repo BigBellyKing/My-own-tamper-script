@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Novel Text Copy Button
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Adds a copy button to easily copy novel text and clicks the next chapter button.
+// @version      1.3
+// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts.
 // @author       You (with modifications)
 // @match        *://**/*
 // @grant        GM.setClipboard
@@ -12,42 +12,66 @@
 (function() {
     'use strict';
 
-    // Function to find the novel content container using a list of possible selectors.
-    function getNovelContentElement() {
-        const selectors = [
+    // Function to find the novel content container and title using a list of possible selectors.
+    function getNovelContentAndTitleElements() {
+        const contentSelectors = [
             '#novel_content',    // The original selector
-            '.chapter-content'   // Another common selector
+            '.chapter-content',  // Another common selector
+            '#nr1'               // Added selector for article content
         ];
 
-        for (const selector of selectors) {
+        const titleSelectors = [
+            '#nr_title',         // Added selector for article title
+            'h1.article-title'   // Another common selector for titles
+        ];
+
+        let novelContentElement = null;
+        for (const selector of contentSelectors) {
             const element = document.querySelector(selector);
             if (element) {
-                return element; // Return the first element that is found
+                novelContentElement = element;
+                break;
             }
         }
 
-        return null; // Return null if no matching element is found
+        let articleTitleElement = null;
+        for (const selector of titleSelectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+                articleTitleElement = element;
+                break;
+            }
+        }
+
+        return {
+            content: novelContentElement,
+            title: articleTitleElement
+        };
     }
 
-    // --- MODIFICATION START ---
-    // New function to find and click the "Next Chapter" button.
-    // It searches for a link with the specific text you provided.
+    // Function to find and click the "Next Chapter" button.
+    // It searches for a list of possible next button texts.
     function findAndClickNextButton() {
-        const nextButtonText = '下一章';
+        const nextButtonTexts = [
+            '下一页', // New, higher priority
+            '下一章'  // Original
+        ];
         const allLinks = document.querySelectorAll('a');
 
-        for (const link of allLinks) {
-            // Check if the link's text content matches exactly
-            if (link.textContent.trim() === nextButtonText) {
-                link.click(); // Click the link
-                return true;  // Indicate that the button was found and clicked
+        for (const textToFind of nextButtonTexts) {
+            for (const link of allLinks) {
+                // Check if the link's text content matches exactly
+                if (link.textContent.trim() === textToFind) {
+                    link.click(); // Click the link
+                    return true;  // Indicate that the button was found and clicked
+                }
             }
         }
 
-        return false; // Indicate that the button was not found
+        return false; // Indicate that no matching button was found
     }
 
-    // New function to handle the sequence of actions after a successful copy.
+    // Function to handle the sequence of actions after a successful copy.
     function handleSuccessfulCopy() {
         showCopyFeedback('Content copied!');
 
@@ -65,12 +89,12 @@
             }
         }, 150); // 150ms delay
     }
-    // --- MODIFICATION END ---
-
 
     // Function to check if we're on a page with novel content
     function checkForNovelContent() {
-        return getNovelContentElement() !== null;
+        const elements = getNovelContentAndTitleElements();
+        // Consider content present if either the main content or the title is found
+        return elements.content !== null || elements.title !== null;
     }
 
     // Only proceed if we detect novel content
@@ -115,41 +139,56 @@
     }
 
     function copyNovelContent() {
-        const novelContent = getNovelContentElement();
+        const { content: novelContent, title: articleTitle } = getNovelContentAndTitleElements();
+        let formattedText = '';
+
+        if (articleTitle) {
+            formattedText += articleTitle.textContent.trim() + '\n\n';
+        }
+
         if (novelContent) {
-            // Get all paragraphs and process them individually
-            const paragraphs = Array.from(novelContent.querySelectorAll('p'));
-            let formattedText = '';
+            // Get all child nodes of the novel content and process them
+            // Stop copying before elements with class 'pagination2' or 'hr' immediately after the content
+            const nodesToCopy = Array.from(novelContent.childNodes).filter(node => {
+                // Stop at the first div with class 'pagination2' or an <hr> tag
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (node.classList.contains('pagination2') || node.tagName === 'HR') {
+                        return false; // Stop filtering, and thus stop processing subsequent nodes
+                    }
+                }
+                return true;
+            });
 
-            paragraphs.forEach(p => {
-                let text = p.textContent
-                    .replace(/\s+/g, ' ') // Collapse multiple whitespace
-                    .trim();
+            nodesToCopy.forEach(node => {
+                if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'P') {
+                    let text = node.textContent
+                        .replace(/\s+/g, ' ') // Collapse multiple whitespace
+                        .trim();
 
-                // Add paragraph spacing only between non-empty paragraphs
-                if (text) {
-                    formattedText += `${text}\n\n`;
+                    // Add paragraph spacing only between non-empty paragraphs
+                    if (text) {
+                        formattedText += `${text}\n\n`;
+                    }
                 }
             });
-            // Clean up extra newlines at the end
-            formattedText = formattedText.trim();
+        }
+        // Clean up extra newlines at the end
+        formattedText = formattedText.trim();
 
-            // Try to use Tampermonkey's clipboard API first
-            // --- MODIFIED --- to use the new success handler
-            if (typeof GM !== 'undefined' && GM.setClipboard) {
-                GM.setClipboard(formattedText)
-                    .then(handleSuccessfulCopy)
-                    .catch(err => fallbackCopy(formattedText));
-            }
-            // Try older Tampermonkey API
-            else if (typeof GM_setClipboard !== 'undefined') {
-                GM_setClipboard(formattedText);
-                handleSuccessfulCopy();
-            }
-            // Fall back to browser methods
-            else {
-                fallbackCopy(formattedText);
-            }
+        // Try to use Tampermonkey's clipboard API first
+        if (typeof GM !== 'undefined' && GM.setClipboard) {
+            GM.setClipboard(formattedText)
+                .then(handleSuccessfulCopy)
+                .catch(err => fallbackCopy(formattedText));
+        }
+        // Try older Tampermonkey API
+        else if (typeof GM_setClipboard !== 'undefined') {
+            GM_setClipboard(formattedText);
+            handleSuccessfulCopy();
+        }
+        // Fall back to browser methods
+        else {
+            fallbackCopy(formattedText);
         }
     }
 
@@ -164,7 +203,6 @@
         textarea.select();
 
         try {
-            // --- MODIFIED --- to use the new success handler
             // Try the modern clipboard API first
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text)
