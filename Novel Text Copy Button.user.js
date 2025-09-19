@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Novel Text Copy Button
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts.
+// @version      1.4
+// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts, and ignoring specific footer content.
 // @author       You (with modifications)
 // @match        *://**/*
 // @grant        GM.setClipboard
@@ -147,19 +147,22 @@
         }
 
         if (novelContent) {
-            // Get all child nodes of the novel content and process them
-            // Stop copying before elements with class 'pagination2' or 'hr' immediately after the content
-            const nodesToCopy = Array.from(novelContent.childNodes).filter(node => {
-                // Stop at the first div with class 'pagination2' or an <hr> tag
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    if (node.classList.contains('pagination2') || node.tagName === 'HR') {
-                        return false; // Stop filtering, and thus stop processing subsequent nodes
-                    }
-                }
-                return true;
-            });
+            // Get all child nodes of the novel content
+            const allContentNodes = Array.from(novelContent.childNodes);
+            let stopCopying = false;
 
-            nodesToCopy.forEach(node => {
+            allContentNodes.forEach(node => {
+                if (stopCopying) {
+                    return; // Skip further nodes if stop condition is met
+                }
+
+                // Check for the specific div with class 'pagination2'
+                if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('pagination2')) {
+                    stopCopying = true; // Set flag to stop processing further nodes
+                    return;
+                }
+
+                // Only process paragraph elements for content
                 if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'P') {
                     let text = node.textContent
                         .replace(/\s+/g, ' ') // Collapse multiple whitespace
