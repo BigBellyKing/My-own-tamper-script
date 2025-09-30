@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Novel Text Copy Button
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts, and ignoring specific footer content.
+// @version      1.5
+// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts, and ignoring specific footer content. Now with specific support for 69shuba.com.
 // @author       You (with modifications)
 // @match        *://**/*
 // @grant        GM.setClipboard
@@ -92,6 +92,13 @@
 
     // Function to check if we're on a page with novel content
     function checkForNovelContent() {
+        // --- START OF 69shuba.com MODIFICATION ---
+        if (window.location.hostname.includes('69shuba.com')) {
+            // On 69shuba, the main container is '.txtnav' and a title always exists within it.
+            return document.querySelector('.txtnav > h1.hide720') !== null;
+        }
+        // --- END OF 69shuba.com MODIFICATION ---
+
         const elements = getNovelContentAndTitleElements();
         // Consider content present if either the main content or the title is found
         return elements.content !== null || elements.title !== null;
@@ -139,6 +146,57 @@
     }
 
     function copyNovelContent() {
+        // --- START OF 69shuba.com MODIFICATION ---
+        if (window.location.hostname.includes('69shuba.com')) {
+            const articleTitleElement = document.querySelector('.txtnav > h1.hide720');
+            const novelContentContainer = document.querySelector('.txtnav');
+            let formattedText = '';
+
+            if (!novelContentContainer) {
+                showCopyFeedback('Content container (.txtnav) not found.');
+                return;
+            }
+
+            if (articleTitleElement) {
+                formattedText += articleTitleElement.textContent.trim() + '\n\n';
+            }
+
+            // Clone the container to manipulate it without affecting the page
+            const contentClone = novelContentContainer.cloneNode(true);
+
+            // Remove all known non-content elements (title, info, ads, scripts)
+            contentClone.querySelectorAll('h1, .txtinfo, #txtright, .contentadv, .bottom-ad, script').forEach(el => el.remove());
+
+            // Get the innerText from the cleaned clone
+            let contentText = contentClone.innerText;
+
+            // Find the end marker (e.g., "(本章完)") and truncate the text
+            const endMarker = '(本章完)';
+            const endMarkerIndex = contentText.indexOf(endMarker);
+            if (endMarkerIndex !== -1) {
+                contentText = contentText.substring(0, endMarkerIndex);
+            }
+
+            // Clean up excessive whitespace and combine with title
+            formattedText += contentText.trim();
+
+            // Use the script's existing copy-to-clipboard logic
+            if (typeof GM !== 'undefined' && GM.setClipboard) {
+                GM.setClipboard(formattedText)
+                    .then(handleSuccessfulCopy)
+                    .catch(err => fallbackCopy(formattedText));
+            } else if (typeof GM_setClipboard !== 'undefined') {
+                GM_setClipboard(formattedText);
+                handleSuccessfulCopy();
+            } else {
+                fallbackCopy(formattedText);
+            }
+
+            return; // IMPORTANT: Prevent the original generic logic from running
+        }
+        // --- END OF 69shuba.com MODIFICATION ---
+
+
         const { content: novelContent, title: articleTitle } = getNovelContentAndTitleElements();
         let formattedText = '';
 
