@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Novel Text Copy Button
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, including the article title, supporting multiple next button texts, and ignoring specific footer content. Now with specific support for 69shuba.com.
+// @version      1.6
+// @description  Adds a copy button to easily copy novel text and clicks the next chapter button, supporting multiple next button texts, and ignoring specific footer content. Now with specific support for 69shuba.com.
 // @author       You (with modifications)
 // @match        *://**/*
 // @grant        GM.setClipboard
@@ -148,7 +148,6 @@
     function copyNovelContent() {
         // --- START OF 69shuba.com MODIFICATION ---
         if (window.location.hostname.includes('69shuba.com')) {
-            const articleTitleElement = document.querySelector('.txtnav > h1.hide720');
             const novelContentContainer = document.querySelector('.txtnav');
             let formattedText = '';
 
@@ -156,15 +155,16 @@
                 showCopyFeedback('Content container (.txtnav) not found.');
                 return;
             }
-
-            if (articleTitleElement) {
-                formattedText += articleTitleElement.textContent.trim() + '\n\n';
-            }
+            
+            // **MODIFICATION START**
+            // The logic to find and add the h1.hide720 title has been removed.
+            // **MODIFICATION END**
 
             // Clone the container to manipulate it without affecting the page
             const contentClone = novelContentContainer.cloneNode(true);
 
             // Remove all known non-content elements (title, info, ads, scripts)
+            // The 'h1' selector here will remove the title element you want to ignore.
             contentClone.querySelectorAll('h1, .txtinfo, #txtright, .contentadv, .bottom-ad, script').forEach(el => el.remove());
 
             // Get the innerText from the cleaned clone
@@ -177,8 +177,8 @@
                 contentText = contentText.substring(0, endMarkerIndex);
             }
 
-            // Clean up excessive whitespace and combine with title
-            formattedText += contentText.trim();
+            // Clean up excessive whitespace and assign it directly
+            formattedText = contentText.trim();
 
             // Use the script's existing copy-to-clipboard logic
             if (typeof GM !== 'undefined' && GM.setClipboard) {
