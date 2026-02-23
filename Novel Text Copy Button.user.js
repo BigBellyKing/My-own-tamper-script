@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         Novel Text Copy Button
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @description  Adds a copy button to easily copy novel text and clicks the next chapter button. Added support for tongrenxsw.com.
+// @version      1.8
+// @description  Adds a copy button to easily copy novel text and clicks the next chapter button. Optimized for tongrenxsw.com class selectors.
 // @author       You (with modifications)
+// @match        *://www.tongrenxsw.com/*
+// @match        *://tongrenxsw.com/*
 // @match        *://**/*
 // @grant        GM.setClipboard
 // @grant        GM_setClipboard
@@ -12,20 +14,20 @@
 (function() {
     'use strict';
 
-    // Function to find the novel content container and title using a list of possible selectors.
+    // Function to find the novel content container and title
     function getNovelContentAndTitleElements() {
         const contentSelectors = [
-            '#content',          // Specific for tongrenxsw
-            '#novel_content',    // Original
-            '.chapter-content',  // Common
-            '#nr1'               // Generic
+            '.content',          // Specific class for tongrenxsw
+            '#content',          // ID variant
+            '#novel_content',
+            '.chapter-content'
         ];
 
         const titleSelectors = [
-            'h1.title',          // Specific for tongrenxsw
-            '#nr_title',         // Added selector for article title
-            'h1.article-title',  // Common
-            '.tit.pcs .cur'      // Breadcrumb title for some sites
+            'h1.title',          // Standard title
+            'h3.font24',         // Title found in your HTML snippet
+            '.tit.pcs .cur',     // Breadcrumb title
+            '#nr_title'
         ];
 
         let novelContentElement = null;
@@ -52,13 +54,8 @@
         };
     }
 
-    // Function to find and click the "Next Chapter" button.
     function findAndClickNextButton() {
-        const nextButtonTexts = [
-            '下一页',
-            '下一章',
-            'Next Chapter'
-        ];
+        const nextButtonTexts = ['下一页', '下一章', 'Next Chapter'];
         const allLinks = document.querySelectorAll('a');
 
         for (const textToFind of nextButtonTexts) {
@@ -69,61 +66,59 @@
                 }
             }
         }
-
         return false;
     }
 
     function handleSuccessfulCopy() {
         showCopyFeedback('Content copied!');
         setTimeout(() => {
-            const wasNextButtonClicked = findAndClickNextButton();
-            if (!wasNextButtonClicked) {
-                setTimeout(() => {
-                    showCopyFeedback('Next button not found.');
-                }, 300);
+            if (!findAndClickNextButton()) {
+                setTimeout(() => showCopyFeedback('Next button not found.'), 300);
             }
         }, 150);
     }
 
+    // UPDATED: More robust check for content
     function checkForNovelContent() {
-        // --- START OF TONGRENXSW.COM SUPPORT ---
         if (window.location.hostname.includes('tongrenxsw.com')) {
-            return document.querySelector('#content') !== null;
+            // Check for the .content class specifically
+            return document.querySelector('.content') !== null || document.querySelector('#content') !== null;
         }
-        // --- END OF TONGRENXSW.COM SUPPORT ---
-
         if (window.location.hostname.includes('69shuba.com')) {
-            return document.querySelector('.txtnav > h1.hide720') !== null;
+            return document.querySelector('.txtnav') !== null;
         }
-
         const elements = getNovelContentAndTitleElements();
-        return elements.content !== null || elements.title !== null;
+        return elements.content !== null;
     }
 
-    if (!checkForNovelContent()) {
-        setTimeout(() => {
-            if (checkForNovelContent()) {
-                initCopyButton();
-            }
-        }, 2000);
-    } else {
-        initCopyButton();
+    // Initialize logic
+    function tryInit() {
+        if (checkForNovelContent()) {
+            initCopyButton();
+        } else {
+            // Try again every second for 5 seconds (handles slow loading)
+            let attempts = 0;
+            const interval = setInterval(() => {
+                attempts++;
+                if (checkForNovelContent()) {
+                    initCopyButton();
+                    clearInterval(interval);
+                } else if (attempts > 5) {
+                    clearInterval(interval);
+                }
+            }, 1000);
+        }
     }
+
+    tryInit();
 
     function initCopyButton() {
+        if (document.getElementById('novel-copy-btn')) return; // Prevent duplicates
+
         const copyButton = document.createElement('button');
+        copyButton.id = 'novel-copy-btn';
         copyButton.textContent = 'Copy & Next';
-        copyButton.style.position = 'fixed';
-        copyButton.style.bottom = '20px';
-        copyButton.style.right = '20px';
-        copyButton.style.padding = '10px 15px';
-        copyButton.style.backgroundColor = '#4CAF50';
-        copyButton.style.color = 'white';
-        copyButton.style.border = 'none';
-        copyButton.style.borderRadius = '5px';
-        copyButton.style.fontSize = '16px';
-        copyButton.style.zIndex = '9999';
-        copyButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+        copyButton.style.cssText = 'position:fixed; bottom:20px; right:20px; padding:10px 15px; background-color:#4CAF50; color:white; border:none; border-radius:5px; font-size:16px; z-index:9999; box-shadow:0 2px 5px rgba(0,0,0,0.3); cursor:pointer;';
         document.body.appendChild(copyButton);
 
         document.addEventListener('keydown', function(e) {
@@ -139,115 +134,58 @@
     function copyNovelContent() {
         // --- TONGRENXSW.COM SPECIFIC LOGIC ---
         if (window.location.hostname.includes('tongrenxsw.com')) {
-            const titleEl = document.querySelector('h1.title') || document.querySelector('.tit.pcs .cur');
-            const contentEl = document.querySelector('#content');
+            const els = getNovelContentAndTitleElements();
             let formattedText = '';
 
-            if (titleEl) formattedText += titleEl.innerText.trim() + '\n\n';
-            if (contentEl) {
-                // Clone to clean up ads or unwanted elements if they exist
-                const clone = contentEl.cloneNode(true);
-                clone.querySelectorAll('script, style, div').forEach(el => el.remove());
+            if (els.title) formattedText += els.title.innerText.trim() + '\n\n';
+            
+            if (els.content) {
+                const clone = els.content.cloneNode(true);
+                // Remove buttons or scripts inside the content
+                clone.querySelectorAll('script, style, .btnW, .btnBlack, .btnBlack2').forEach(el => el.remove());
                 formattedText += clone.innerText.trim();
             }
 
-            if (formattedText) {
+            if (formattedText.trim().length > 10) {
                 GM_setClipboard(formattedText.trim());
                 handleSuccessfulCopy();
                 return;
             }
         }
 
-        // --- 69shuba.com MODIFICATION ---
+        // --- 69shuba logic ---
         if (window.location.hostname.includes('69shuba.com')) {
-            const novelContentContainer = document.querySelector('.txtnav');
-            if (!novelContentContainer) {
-                showCopyFeedback('Content container (.txtnav) not found.');
+            const container = document.querySelector('.txtnav');
+            if (container) {
+                const clone = container.cloneNode(true);
+                clone.querySelectorAll('h1, .txtinfo, #txtright, .contentadv, .bottom-ad, script').forEach(el => el.remove());
+                let text = clone.innerText.split('(本章完)')[0].trim();
+                GM_setClipboard(text);
+                handleSuccessfulCopy();
                 return;
             }
-            const contentClone = novelContentContainer.cloneNode(true);
-            contentClone.querySelectorAll('h1, .txtinfo, #txtright, .contentadv, .bottom-ad, script').forEach(el => el.remove());
-            let contentText = contentClone.innerText;
-            const endMarker = '(本章完)';
-            const endMarkerIndex = contentText.indexOf(endMarker);
-            if (endMarkerIndex !== -1) {
-                contentText = contentText.substring(0, endMarkerIndex);
-            }
-            let formattedText = contentText.trim();
-
-            GM_setClipboard(formattedText);
-            handleSuccessfulCopy();
-            return;
         }
 
         // --- GENERIC LOGIC ---
         const { content: novelContent, title: articleTitle } = getNovelContentAndTitleElements();
         let formattedText = '';
 
-        if (articleTitle) {
-            formattedText += articleTitle.textContent.trim() + '\n\n';
-        }
-
+        if (articleTitle) formattedText += articleTitle.textContent.trim() + '\n\n';
         if (novelContent) {
-            const allContentNodes = Array.from(novelContent.childNodes);
-            let stopCopying = false;
-            allContentNodes.forEach(node => {
-                if (stopCopying) return;
-                if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('pagination2')) {
-                    stopCopying = true;
-                    return;
-                }
-                if (node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'P' || node.tagName === 'DIV')) {
-                    let text = node.textContent.replace(/\s+/g, ' ').trim();
-                    if (text) formattedText += `${text}\n\n`;
-                } else if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                    formattedText += node.textContent.trim() + '\n\n';
-                }
-            });
+            formattedText += novelContent.innerText.trim();
         }
 
-        formattedText = formattedText.trim();
-
-        if (typeof GM_setClipboard !== 'undefined') {
-            GM_setClipboard(formattedText);
+        if (formattedText.trim()) {
+            GM_setClipboard(formattedText.trim());
             handleSuccessfulCopy();
-        } else {
-            fallbackCopy(formattedText);
         }
-    }
-
-    function fallbackCopy(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) handleSuccessfulCopy();
-            else showCopyFeedback('Copy failed.');
-        } catch (err) {
-            showCopyFeedback('Copy failed: ' + err);
-        }
-        document.body.removeChild(textarea);
     }
 
     function showCopyFeedback(message) {
         const feedback = document.createElement('div');
         feedback.textContent = message;
-        feedback.style.position = 'fixed';
-        feedback.style.bottom = '70px';
-        feedback.style.right = '20px';
-        feedback.style.padding = '10px';
-        feedback.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        feedback.style.color = 'white';
-        feedback.style.borderRadius = '5px';
-        feedback.style.zIndex = '10000';
+        feedback.style.cssText = 'position:fixed; bottom:70px; right:20px; padding:10px; background-color:rgba(0,0,0,0.7); color:white; border-radius:5px; z-index:10000;';
         document.body.appendChild(feedback);
-        setTimeout(() => {
-            if (document.body.contains(feedback)) document.body.removeChild(feedback);
-        }, 2000);
+        setTimeout(() => feedback.remove(), 2000);
     }
 })();
